@@ -22,6 +22,9 @@
 
 ## 3D Printed Parts Required
 
+**Official Chassis Selection:** [Hexapod Mochi by RookiDroid](https://rookidroid.com/build-your-own-mochi/). 
+*You can download all the free `.stl` files from their site. It is a circular, 18-servo chassis built for MG90S/MG92B micro servos, making it the perfect mechanical base for Project NeuroHex.*
+
 ### Body/Chassis
 * **1x Main Thorax (Baseplate):** The central hub. Needs mounting standoffs/holes for the Raspberry Pi on top, and mounting rails for the two PCA9685 boards underneath.
 * **1x Battery/Abdomen Caddy:** A bracket to hold the USB power bank and the LiPo battery securely to the rear or underside of the Thorax.
