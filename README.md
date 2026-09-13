@@ -1,5 +1,7 @@
 # Project NeuroHex
 
+![Project NeuroHex Final Assembly Render](neurohex_render.jpg) 
+
 Project NeuroHex is a cutting-edge neurorobotics class project that deploys the **actual biological connectome** of a fruit fly (*Drosophila melanogaster*) to drive a physical hexapod robot.
 
 Unlike standard biomimetic robots that use hardcoded behavioral loops (like Braitenberg vehicles), NeuroHex uses a Spiking Neural Network (SNN) simulator (`brian2`) to run the literal synaptic wiring diagram downloaded from [Virtual Fly Brain](https://www.virtualflybrain.org). 
