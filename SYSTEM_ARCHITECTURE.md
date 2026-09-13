@@ -1,5 +1,7 @@
 # Project NeuroHex: System Architecture & Schematics
 
+![Hardware Wiring Schematic](system_schematic.jpg)
+
 This document provides detailed schematics of the entire NeuroHex system, breaking down the hardware wiring, the software data flow, and the physical power delivery.
 
 ---
