@@ -206,6 +206,18 @@ Verified end-to-end on a real Raspberry Pi 5 (16GB). A few things that only show
 - **`vfb-connect` (only needed by `fetch_connectome.py`) may fail to build on ARM** -- one of its transitive dependencies (`ncollpyde`, via `navis`) has no prebuilt aarch64 wheel and needs a Rust toolchain to compile from source. Since the Pi never needs to run `fetch_connectome.py` itself (fetch once on a dev machine, then copy `connectome_data/` over), it's simplest to just install the other four requirements directly rather than installing Rust for this.
 - **A `from brian2 import *` wildcard import shadows Python's builtin `max`/`min`** with numpy's reduction versions (`np.max(a, axis)`, not a pairwise max) on at least some numpy versions -- this surfaced as a `TypeError` on the Pi that hadn't appeared in Mac testing. `snn_brain.py` avoids bare `max()`/`min()` after that import for this reason; keep doing so in any new code added to that file.
 
+### Optional: live log display on a connected screen
+
+`deploy/neurohex-display.service` runs `main.py` directly on `/dev/tty1` (the console on a directly-connected HDMI display), tee'd to `~/neurohex/display.log` so the same output can be checked remotely too. It's a systemd unit, not Python code, so it needs installing once per Pi:
+
+```bash
+sudo cp deploy/neurohex-display.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now neurohex-display.service
+```
+
+The `User=`/path fields inside assume the `lumi` account and `~/neurohex` used on this project's dev Pi -- edit them to match if deploying under a different username or path. It conflicts with (takes over from) `getty@tty1.service`, matching the same pattern a prior kiosk display on that Pi used for the same console.
+
 ## 📁 Project Structure
 
 ```text

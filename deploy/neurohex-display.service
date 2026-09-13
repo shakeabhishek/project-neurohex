@@ -1,0 +1,21 @@
+[Unit]
+Description=NeuroHex live control-loop log display
+After=multi-user.target
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=lumi
+WorkingDirectory=/home/lumi/neurohex
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+ExecStart=/bin/sh -c '/home/lumi/neurohex/venv/bin/python -u /home/lumi/neurohex/main.py 2>&1 | tee -a /home/lumi/neurohex/display.log'
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
