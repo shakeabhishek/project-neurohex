@@ -79,7 +79,8 @@ class NeuroHexBrain:
                 self.sensory_visual_indices.append(idx)
             elif group == 'JO':
                 self.sensory_mechano_indices.append(idx)
-            elif group in ['DN', 'GFC']:
+            elif group in ['DN', 'GFC', 'CL']:
+                # CL neurons (especially CL305) are key relay neurons in the GF pathway
                 self.motor_indices.append(idx)
                 
         self._build_network()
@@ -102,22 +103,38 @@ class NeuroHexBrain:
 
     def _build_network(self):
         """Build the Brian2 network from connectome data."""
+        # Neuron parameters
+        tau = 10 * ms
+        v_rest = -70 * mV
+        v_thresh = -50 * mV
+        v_reset = -65 * mV
+        R = 100 * Mohm
+        
+        # Store for reset
+        self.v_rest = v_rest
+        
         # LIF equations
         eqs = '''
         dv/dt = (v_rest - v + R*I) / tau : volt (unless refractory)
         I : amp
         '''
         
-        # Neuron parameters
-        self.tau = 10 * ms
-        self.v_rest = -70 * mV
-        self.v_thresh = -50 * mV
-        self.v_reset = -65 * mV
-        self.R = 100 * Mohm
-        
         # Create NeuronGroup
-        self.neurons = NeuronGroup(self.N, eqs, threshold='v>v_thresh', reset='v=v_reset', refractory=2*ms, method='exact')
-        self.neurons.v = self.v_rest
+        self.neurons = NeuronGroup(
+            self.N, eqs,
+            threshold='v > v_thresh',
+            reset='v = v_reset',
+            refractory=2*ms,
+            method='exact',
+            namespace={
+                'tau': tau,
+                'v_rest': v_rest,
+                'v_thresh': v_thresh,
+                'v_reset': v_reset,
+                'R': R,
+            }
+        )
+        self.neurons.v = v_rest
         self.neurons.I = 0 * amp
         
         # Synapse parameters
@@ -131,15 +148,18 @@ class NeuroHexBrain:
         sources, targets = np.nonzero(self.adj_matrix)
         self.synapses.connect(i=sources, j=targets)
         
-        # Set weights based on normalized synapse counts
-        synapse_counts = self.adj_matrix[sources, targets]
-        self.synapses.w = (synapse_counts / max_synapses) * w_max
+        # Set weights: use log-scaling to compress the large dynamic range (3-380 synapses).
+        # Linear normalization would crush weaker but critical connections (e.g., GF→DN = 3 synapses).
+        synapse_counts = self.adj_matrix[sources, targets].astype(float)
+        log_weights = np.log1p(synapse_counts)
+        log_max = np.log1p(float(max_synapses))
+        self.synapses.w = (log_weights / log_max) * w_max
         
-        # Monitors
-        self.motor_monitor = SpikeMonitor(self.neurons[self.motor_indices])
+        # Monitors - monitor ALL neurons (brian2 requires contiguous indices for subgroups)
+        self.spike_monitor = SpikeMonitor(self.neurons)
         
         # Create Brian Network object
-        self.network = Network(self.neurons, self.synapses, self.motor_monitor)
+        self.network = Network(self.neurons, self.synapses, self.spike_monitor)
 
     def inject_spikes(self, neuron_indices, current_value_nA):
         """
@@ -169,22 +189,20 @@ class NeuroHexBrain:
         Returns:
             dict: Motor output after this step.
         """
-        # Base conversion from 0-1 input to nA (up to 2 nA)
-        max_current = 2.0 
+        # Reset all currents
+        self.neurons.I = 0 * nA
+        
+        # Threshold current is ~200 pA. Scale input 0-1 to 0-1 nA (well above threshold).
+        max_current = 1.0  # nA
         
         if visual_input is not None and visual_input > 0:
-            for idx in self.sensory_visual_indices:
-                self.neurons.I[idx] = (visual_input * max_current) * nA
+            self.neurons.I[self.sensory_visual_indices] = (visual_input * max_current) * nA
                 
         if mechanosensory_input is not None and mechanosensory_input > 0:
-            for idx in self.sensory_mechano_indices:
-                self.neurons.I[idx] = (mechanosensory_input * max_current) * nA
+            self.neurons.I[self.sensory_mechano_indices] = (mechanosensory_input * max_current) * nA
                 
         # Run step
         self.network.run(duration_ms * ms)
-        
-        # Reset currents for next step if no input provided next time
-        self.neurons.I = 0 * nA
         
         return self.get_motor_output()
 
@@ -201,8 +219,9 @@ class NeuroHexBrain:
         run_time = self.network.t
         if run_time > 0 * ms:
             run_time_s = run_time / second
-            for i, motor_idx in enumerate(self.motor_indices):
-                spikes = self.motor_monitor.count[i]
+            for motor_idx in self.motor_indices:
+                # Count spikes for this specific motor neuron from the full monitor
+                spikes = np.sum(self.spike_monitor.i == motor_idx)
                 rate = spikes / run_time_s
                 rates[motor_idx] = rate
                 total_spikes += spikes
@@ -228,10 +247,10 @@ class NeuroHexBrain:
         self.neurons.v = self.v_rest
         self.neurons.I = 0 * amp
         
-        # clear monitor
-        self.network.remove(self.motor_monitor)
-        self.motor_monitor = SpikeMonitor(self.neurons[self.motor_indices])
-        self.network.add(self.motor_monitor)
+        # Clear and replace monitor
+        self.network.remove(self.spike_monitor)
+        self.spike_monitor = SpikeMonitor(self.neurons)
+        self.network.add(self.spike_monitor)
         self.network.t = 0 * ms
 
 

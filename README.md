@@ -8,11 +8,18 @@
 
 ## 📌 Overview
 
-Traditional biomimetic robots typically rely on hardcoded behavioral loops, finite state machines, or abstract artificial neural networks that loosely draw inspiration from biology. **NeuroHex** takes a radically different approach: it runs the LITERAL synaptic wiring diagram of a fruit fly (*Drosophila melanogaster*), downloaded directly from Virtual Fly Brain, to drive a physical hexapod robot.
+![Project NeuroHex Final Assembly Render](assets/neurohex_render.jpg)
+
+Traditional biomimetic robots typically rely on hardcoded behavioral loops, finite state machines, or abstract artificial neural networks that loosely draw inspiration from biology. **NeuroHex** takes a radically different approach: it runs the LITERAL synaptic wiring diagram of a fruit fly (*Drosophila melanogaster*), downloaded directly from Virtual Fly Brain, to drive a physical hexapod robot based on the **Hexapod Nougat** chassis.
 
 By leveraging the **brian2** Spiking Neural Network (SNN) simulator, NeuroHex implements biologically plausible Leaky Integrate-and-Fire (LIF) neurons. The architecture models real physiological dynamics, mapping exact synaptic weights and connectivity from the fly's connectome.
 
 The core demonstration of this platform is a **real-time escape response**. A camera detects looming objects (simulating a predator), visual neurons fire proportionally to the optical flow, and the signal cascades through the Giant Fiber escape circuit. Once the central escape command is triggered, motor neurons coordinate the hexapod legs to execute an immediate escape maneuver.
+
+## Hardware & Architecture
+
+![Hardware Schematic](assets/system_schematic.jpg)
+![Full Chassis Sketch](assets/neurohex_full_sketch.jpg)
 
 ## 🏗️ System Architecture
 
