@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+venv/
+connectome_data/
+brian2_cpp_build/
+.DS_Store

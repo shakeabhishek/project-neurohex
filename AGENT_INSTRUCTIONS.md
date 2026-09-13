@@ -11,13 +11,14 @@ The user is working in the `agy` CLI to continue this project.
 - `opencv-python` for visual input.
 - `adafruit-circuitpython-servokit` for controlling the servos via a PCA9685 I2C board.
 
-**Your immediate next steps when the user resumes the session:**
+**Status as of the last session:**
 
-1. **Install Dependencies:** Ask the user if they have run `pip install vfb-connect brian2 opencv-python adafruit-circuitpython-servokit smbus2`.
-2. **Data Retrieval Script:** Write a python script (e.g., `fetch_connectome.py`) that uses `vfb-connect` to pull an adjacency matrix for a small sensorimotor circuit (like the Giant Fiber system or motion-detecting LPTCs). *Do not pull the whole brain, the Pi will crash.*
-3. **SNN Skeleton:** Once the data is downloaded, write a basic `brian2` simulation script (`snn_brain.py`) that loads this matrix, creates a `NeuronGroup`, and sets up basic Leaky Integrate-and-Fire (LIF) equations.
-4. **I/O Integration:** Help the user write the translation layer to convert OpenCV camera pixels into input spikes, and read output spikes to drive the `adafruit_servokit` legs.
+1. **Dependencies:** Installed in `venv/` (`vfb-connect`, `brian2`, `opencv-python`, `adafruit-circuitpython-servokit`, `smbus2`, etc.).
+2. **Data Retrieval Script:** `fetch_connectome.py` is done. It pulls the 1-hop synaptic neighborhood of the Giant Fiber (both L/R instances) from the **MaleCNS** whole-brain+nerve-cord dataset (~166,000 neurons total) via `vfb-connect` -- not the whole brain. This yields ~992 neurons. An earlier version used the hemibrain dataset (brain-only), which meant GF's real motor targets (in the VNC) were never reachable and the escape signal never actually fired a motor neuron -- if you see hemibrain IDs or a neuron count near 391 again, that regression has resurfaced.
+3. **SNN Skeleton:** `snn_brain.py` (`NeuroHexBrain`) is done: loads the adjacency matrix, builds LIF neurons via `brian2`, and reads out escape magnitude from the `TTMn`/`DN` groups (GF's real, physically-verified motor targets). GF's synapses onto TTMn/DN are deliberately given a strong, near-suprathreshold flat weight rather than the log-compressed population weighting used elsewhere, reflecting the real "giant synapse" physiology (see README references). Verified: `python snn_brain.py` shows escape magnitude ramping up and crossing threshold under a simulated looming stimulus.
+4. **I/O Integration (not started):** Still need the translation layer: OpenCV optical flow -> spike injection into `sensory_visual_indices`/`sensory_mechano_indices`, and `get_motor_output()`'s escape magnitude -> `adafruit_servokit` PWM angles for the pre-programmed escape gait. This is the next real piece of work.
 
 **Important Constraints:**
-- Keep the number of simulated neurons small (< 1000) so it runs in real-time on a Raspberry Pi.
+- Keep the simulated circuit scoped to GF's direct neighborhood (~1000 neurons), not the whole connectome, so it runs in real time on a Raspberry Pi (16GB Pi 5 targeted).
 - Remind the user they need two power supplies (one for the Pi, one for the 18 servos).
+- This dev machine has no camera/servos attached -- the I/O layer needs a mockable/no-hardware fallback path (similar to `snn_brain.py`'s dummy-data fallback) so it's testable here before deploying to the actual Pi.

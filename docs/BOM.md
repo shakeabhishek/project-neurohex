@@ -3,13 +3,13 @@
 ## Off-the-Shelf Hardware (To Buy/Source)
 
 ### Compute & Control
-* **1x** Raspberry Pi (Model 3, 4, or 5)
+* **1x** Raspberry Pi 5 (16GB RAM). The escape circuit itself is small (~1,000 neurons), so the 16GB is mainly headroom for OpenCV and dev tooling rather than a hard requirement of the SNN.
 * **1x** Raspberry Pi Camera Module V2 (or similar)
 * **2x** PCA9685 16-Channel I2C PWM Servo Drivers (We need 2 because we have 18 servos, and each board only holds 16).
 * **18x** 21g Metal Gear Servos (Required for the Nougat chassis. Standard 9g micro-servos like the MG90S will be too small and weak to fit the brackets or lift the heavier frame).
 
 ### Power Delivery
-* **1x** USB Power Bank (5V, 2.1A+ output) - To power the Raspberry Pi.
+* **1x** Portable USB-C PD power bank explicitly rated for **5V⎓5A (25W+) output** (e.g., a Talentcell 12V 7000mAh-class PD pack) - for untethered walking. Most PD power banks cap the 5V rung at 3A and only hit higher wattage at 9V/12V/20V, which the Pi 5 won't accept; check the bank's spec sheet for "5V/5A" explicitly, not just its peak wattage. Use the official Raspberry Pi 5 27W USB-C PD supply (5.1V/5A) for stationary bench testing/development.
 * **1x** 2S LiPo Battery (7.4V, ~2000mAh+) - To power the servos.
 * **1x** 5V High-Current Buck Converter (e.g., LM2596 or a 10A UBEC) - To step the 7.4V LiPo down to a safe 5V for the PCA9685 boards and servos.
 

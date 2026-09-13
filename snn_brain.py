@@ -6,21 +6,25 @@ This module simulates the Giant Fiber (GF) escape circuit of a fruit fly
 connectome data. The network uses Leaky Integrate-and-Fire (LIF) neurons.
 
 Biology Overview:
-- LIF Neurons: A simple but effective model where neurons act like a leaky capacitor. 
-  Incoming spikes charge the membrane voltage. If it hits a threshold, the neuron 
+- LIF Neurons: A simple but effective model where neurons act like a leaky capacitor.
+  Incoming spikes charge the membrane voltage. If it hits a threshold, the neuron
   spikes and resets. The "leak" slowly returns the voltage to rest over time (tau).
-- Synapse Counts to Weights: Connectome data gives us the number of physical 
-  synapses between neurons. We map this linearly to synaptic weight (the voltage 
-  change caused in the post-synaptic neuron per pre-synaptic spike). More synapses = stronger connection.
+- Synapse Counts to Weights: Connectome data gives us the number of physical
+  synapses between neurons. Most synapses are log-scaled to a shared weight
+  ceiling (log-compression keeps a few very strong connections from drowning
+  out weaker but still meaningful ones). GF's direct synapses onto its true
+  motor targets (TTMn/DN) are the exception: see _build_network().
 - Neuron Groups:
   - LC4 / LPLC2: Visual projection neurons detecting looming objects (approaching threats).
   - JO (Johnston's Organ): Mechanosensory neurons detecting wind/vibration (another threat cue).
-  - GF (Giant Fiber): The main command neuron that initiates the fast escape response.
-  - DN / GFC: Descending neurons and GF targets that send the motor commands to the legs/wings.
+  - GF (Giant Fiber): The main command neuron (bilateral pair) that initiates the fast escape response.
+  - TTMn / DN: GF's real motor targets -- TTMn (tergotrochanteral motor neuron)
+    fires the jump muscle directly; DN (incl. DNp11) carries the descending
+    command onward. GFC1-4 are a mid-circuit relay, modeled but not read out.
   - AVLP, PVLP, SAD, CL: Various interneuron groups in the brain's optic and sensory integration areas.
-- The Escape Circuit: Visual (LC4/LPLC2) and mechanosensory (JO) inputs converge on 
-  the GF and related interneurons. When enough inputs fire synchronously (e.g., due to 
-  a looming object), the GF fires, triggering the descending motor neurons (DN) to execute a jump/fly-away sequence.
+- The Escape Circuit: Visual (LC4/LPLC2) and mechanosensory (JO) inputs converge on
+  the GF and related interneurons. When enough inputs fire synchronously (e.g., due to
+  a looming object), the GF fires, triggering TTMn/DN to execute a jump/fly-away sequence.
 
 Usage:
 To optimize for real-time performance on a Raspberry Pi, consider uncommenting the
@@ -41,17 +45,24 @@ class NeuroHexBrain:
     Encapsulates the SNN brain simulation for the NeuroHex robot.
     """
     
-    def __init__(self, connectome_dir='connectome_data', dt_ms=1.0):
+    def __init__(self, connectome_dir='connectome_data', dt_ms=1.0, readout_window_ms=100.0):
         """
         Initialize the SNN brain.
-        
+
         Args:
             connectome_dir (str): Path to the directory containing connectome data.
             dt_ms (float): Simulation time step in milliseconds.
+            readout_window_ms (float): Trailing window used by step() to compute
+                escape magnitude -- a rolling "recent activity" rate rather than
+                an average since the network started. 100ms balances reacting
+                quickly to a new threat against enough spikes to give a stable
+                rate estimate (a single call's duration_ms is usually too short
+                on its own: 1-2 motor spikes in 10-20ms is a noisy rate).
         """
         defaultclock.dt = dt_ms * ms
         self.dt_ms = dt_ms
-        
+        self.readout_window_ms = readout_window_ms
+
         # Load connectome data
         adj_path = os.path.join(connectome_dir, 'adjacency_matrix.npy')
         meta_path = os.path.join(connectome_dir, 'neuron_metadata.json')
@@ -79,8 +90,12 @@ class NeuroHexBrain:
                 self.sensory_visual_indices.append(idx)
             elif group == 'JO':
                 self.sensory_mechano_indices.append(idx)
-            elif group in ['DN', 'GFC', 'CL']:
-                # CL neurons (especially CL305) are key relay neurons in the GF pathway
+            elif group in ['DN', 'TTMn']:
+                # True post-GF motor output: TTMn is the tergotrochanteral
+                # motor neuron that fires the jump muscle; DN (DNp11 and
+                # others) carries the descending command onward. GFC is a
+                # mid-circuit relay, not a motor neuron, so it's excluded
+                # here (it still participates in the network dynamics).
                 self.motor_indices.append(idx)
                 
         self._build_network()
@@ -140,20 +155,41 @@ class NeuroHexBrain:
         # Synapse parameters
         w_max = 1.5 * mV
         max_synapses = np.max(self.adj_matrix) if np.max(self.adj_matrix) > 0 else 1.0
-        
+
         # Create Synapses
         self.synapses = Synapses(self.neurons, self.neurons, 'w : volt', on_pre='v_post += w')
-        
+
         # Connect synapses based on adjacency matrix
         sources, targets = np.nonzero(self.adj_matrix)
         self.synapses.connect(i=sources, j=targets)
-        
-        # Set weights: use log-scaling to compress the large dynamic range (3-380 synapses).
-        # Linear normalization would crush weaker but critical connections (e.g., GF→DN = 3 synapses).
+
+        # Set weights: use log-scaling to compress the large dynamic range of
+        # synapse counts (single digits to 700+). This works well for the
+        # population-coded pathways (e.g. LC4/LPLC2 -> GF), where hundreds of
+        # neurons converge and threshold-crossing is a matter of summation.
         synapse_counts = self.adj_matrix[sources, targets].astype(float)
         log_weights = np.log1p(synapse_counts)
         log_max = np.log1p(float(max_synapses))
-        self.synapses.w = (log_weights / log_max) * w_max
+        weight_mV = (log_weights / log_max) * (w_max / mV)
+
+        # GF's direct synapses onto TTMn/DN are the opposite regime: a single
+        # presynaptic partner, not a convergent population. Physiologically
+        # this is the classic "giant synapse" of the escape circuit -- a
+        # mixed electrical+chemical junction known for ~one-for-one, near
+        # zero-latency following (Trimarchi & Schneiderman 1993; Allen et al.
+        # 2007) -- so log-compressing it against hundreds of unrelated brain
+        # synapses would crush it below firing threshold regardless of its
+        # real reliability. Give these specific edges a flat, comfortably
+        # suprathreshold weight (threshold is 20 mV above rest) instead.
+        group_of_index = np.empty(self.N, dtype=object)
+        for meta in self.metadata:
+            group_of_index[meta['index']] = meta['group']
+
+        gf_to_motor = (group_of_index[sources] == 'GF') & np.isin(group_of_index[targets], ['TTMn', 'DN'])
+        w_gf_motor_mV = 22.0
+        weight_mV[gf_to_motor] = w_gf_motor_mV
+
+        self.synapses.w = weight_mV * mV
         
         # Monitors - monitor ALL neurons (brian2 requires contiguous indices for subgroups)
         self.spike_monitor = SpikeMonitor(self.neurons)
@@ -203,32 +239,53 @@ class NeuroHexBrain:
                 
         # Run step
         self.network.run(duration_ms * ms)
-        
-        return self.get_motor_output()
 
-    def get_motor_output(self):
+        return self.get_motor_output(window_ms=self.readout_window_ms)
+
+    def get_motor_output(self, window_ms=None):
         """
-        Calculate spike rates for motor neurons over the recent recorded window.
-        
+        Calculate spike rates for motor neurons.
+
+        Args:
+            window_ms (float, optional): If given, only counts spikes in the
+                trailing window_ms of simulated time (a rolling recent rate).
+                If None, averages over the network's entire history since
+                creation/reset instead. That cumulative average is fine for a
+                short one-shot run (e.g. the demo below), but for a
+                continuously-running control loop it makes the readout less
+                and less responsive to new activity the longer the process
+                has been running, since old quiet periods keep diluting the
+                denominator -- always pass a window in that case (step()
+                does this automatically via self.readout_window_ms).
+
         Returns:
             dict: {'escape_magnitude': float, 'spike_rates': dict}
         """
         rates = {}
         total_spikes = 0
-        
+
         run_time = self.network.t
         if run_time > 0 * ms:
-            run_time_s = run_time / second
+            if window_ms is not None:
+                window_start = max(0 * ms, run_time - window_ms * ms)
+                duration_s = (run_time - window_start) / second
+                in_window = self.spike_monitor.t >= window_start
+                spike_indices = self.spike_monitor.i[in_window]
+            else:
+                duration_s = run_time / second
+                spike_indices = self.spike_monitor.i
+
             for motor_idx in self.motor_indices:
-                # Count spikes for this specific motor neuron from the full monitor
-                spikes = np.sum(self.spike_monitor.i == motor_idx)
-                rate = spikes / run_time_s
+                spikes = np.sum(spike_indices == motor_idx)
+                rate = spikes / duration_s if duration_s > 0 else 0.0
                 rates[motor_idx] = rate
                 total_spikes += spikes
-                
+        else:
+            duration_s = 1.0
+
         # Simple heuristic for escape magnitude
         num_motor = len(self.motor_indices) if len(self.motor_indices) > 0 else 1
-        escape_magnitude = (total_spikes / (run_time / second if run_time > 0*ms else 1.0)) / num_motor
+        escape_magnitude = (total_spikes / duration_s) / num_motor if duration_s > 0 else 0.0
         
         # Normalize roughly to 0-1 based on a max expected firing rate (e.g., 100 Hz)
         norm_escape = min(1.0, escape_magnitude / 100.0)

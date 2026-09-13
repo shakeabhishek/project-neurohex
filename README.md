@@ -4,13 +4,15 @@
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![Brian2](https://img.shields.io/badge/Brian2-SNN-orange.svg)
 ![OpenCV](https://img.shields.io/badge/OpenCV-Vision-green.svg)
-![Raspberry Pi](https://img.shields.io/badge/Raspberry_Pi-4B-red.svg)
+![Raspberry Pi](https://img.shields.io/badge/Raspberry_Pi-5_16GB-red.svg)
 
 ## 📌 Overview
 
 ![Project NeuroHex Final Assembly Render](assets/neurohex_render.jpg)
 
-Traditional biomimetic robots typically rely on hardcoded behavioral loops, finite state machines, or abstract artificial neural networks that loosely draw inspiration from biology. **NeuroHex** takes a radically different approach: it runs the LITERAL synaptic wiring diagram of a fruit fly (*Drosophila melanogaster*), downloaded directly from Virtual Fly Brain, to drive a physical hexapod robot based on the **Hexapod Nougat** chassis.
+Traditional biomimetic robots typically rely on hardcoded behavioral loops, finite state machines, or abstract artificial neural networks that loosely draw inspiration from biology. **NeuroHex** takes a radically different approach: it runs the LITERAL synaptic wiring diagram of a fruit fly (*Drosophila melanogaster*), downloaded directly from Virtual Fly Brain's **MaleCNS** whole-brain-and-nerve-cord reconstruction, to drive a physical hexapod robot based on the **Hexapod Nougat** chassis.
+
+We only pull the direct (1-hop) synaptic neighborhood of the Giant Fiber escape circuit out of that ~166,000-neuron connectome, not the whole CNS, which would be far too large to simulate in real time on a Raspberry Pi.
 
 By leveraging the **brian2** Spiking Neural Network (SNN) simulator, NeuroHex implements biologically plausible Leaky Integrate-and-Fire (LIF) neurons. The architecture models real physiological dynamics, mapping exact synaptic weights and connectivity from the fly's connectome.
 
@@ -55,26 +57,26 @@ This diagram outlines the biological signal flow, from sensory input down to mot
 ```mermaid
 flowchart TD
     subgraph Sensory Layer
-        LC4["LC4 (82) Looming Detection"]
-        LPLC2["LPLC2 (71) Looming Detection"]
-        JO["JO-A/B/C (71) Mechanosensory"]
+        LC4["LC4 (126) Looming Detection"]
+        LPLC2["LPLC2 (182) Looming Detection"]
+        JO["JO-B/C (23) Mechanosensory"]
     end
 
     subgraph Processing Layer
-        AVLP["AVLP (28)"]
-        PVLP["PVLP (31)"]
-        SAD["SAD (49)"]
-        CL["CL (24)"]
+        AVLP["AVLP (48)"]
+        PVLP["PVLP (60)"]
+        SAD["SAD (69)"]
+        CL["CL (49)"]
     end
 
     subgraph Command & Relay
-        GF["Giant Fiber (1) Escape Command"]
-        GFC["GFC1-4 (107) Coupled Relay"]
+        GF["Giant Fiber L/R (2) Escape Command"]
+        GFC["GFC1-4 (27) Coupled Relay"]
     end
 
     subgraph Motor Control
-        DN["DNp11 (1) Descending Motor Command"]
-        MN["Motor Neurons (VNC)"]
+        TTMn["TTMn (2) Jump-Muscle Motor Neuron"]
+        DN["DN incl. DNp11 (35) Descending Motor Command"]
         Legs(("Hexapod Legs"))
     end
 
@@ -91,30 +93,36 @@ flowchart TD
     CL --> GF
     
     GF --> GFC
-    GFC --> DN
-    DN --> MN
-    MN --> Legs
+    GF --> TTMn
+    GF --> DN
+    TTMn --> Legs
+    DN --> Legs
 ```
+
+> TTMn (tergotrochanteral motor neuron) is GF's classic "giant synapse" target: a near one-for-one, high-reliability connection that directly fires the jump muscle. GFC1-4 are captured as relay neurons in the simulated network, but their own downstream targets are outside the 1-hop scope we simulate.
 
 ## 📊 Connectome Coverage
 
-To achieve real-time performance on a Raspberry Pi, we strategically isolated the escape circuitry while excluding metabolically/computationally expensive regions unnecessary for this specific reflex.
+To achieve real-time performance on a Raspberry Pi, we strategically isolated the escape circuitry while excluding metabolically/computationally expensive regions unnecessary for this specific reflex. Concretely, `fetch_connectome.py` pulls only the direct (1-hop) synaptic neighborhood of the Giant Fiber neurons out of the ~166,000-neuron MaleCNS reconstruction: everything else in the brain and nerve cord is left out.
 
-### Included Neuron Groups (391 neurons)
+### Included Neuron Groups (992 neurons)
 
 | Group | Count | Biological Role | Function in Robot |
 |-------|-------|----------------|------------------|
-| **LC4** | 71 | Looming-sensitive visual neurons | Collision detection from camera |
-| **LPLC2** | 82 | Lobula plate columnar (looming) | Size × velocity computation |
-| **JO-A/B/C** | 71 | Johnston's Organ mechanosensory | Wind/vibration sensing |
-| **AVLP** | 28 | Anterior ventrolateral protocerebrum | Visual integration |
-| **PVLP** | 31 | Posterior ventrolateral protocerebrum | Visual processing |
-| **SAD** | 49 | Superior anterior declivis | Sensory integration |
-| **CL** | 24 | Clamp interneurons | Feedback modulation |
-| **Giant Fiber** | 1 | Central escape command neuron | Escape trigger |
-| **GFC1-4** | 107 | Giant Fiber coupled neurons | Motor relay |
-| **DN** | 1 | Descending neuron (DNp11) | Brain → VNC motor command |
-| **Other** | 26 | PS, PLP, WED, SMP, etc. | Supporting circuitry |
+| **LPLC2** | 182 | Lobula plate columnar (looming) | Size × velocity computation |
+| **LC4** | 126 | Looming-sensitive visual neurons | Collision detection from camera |
+| **SAD** | 69 | Saddle interneurons | Sensory integration |
+| **PVLP** | 60 | Posterior ventrolateral protocerebrum | Visual processing |
+| **CL** | 49 | Clamp interneurons (incl. CL305) | Feedback modulation |
+| **AVLP** | 48 | Anterior ventrolateral protocerebrum | Visual integration |
+| **DN** | 35 | Descending neurons (incl. DNp11) | Brain → VNC motor command |
+| **GFC1-4** | 27 | Giant Fiber coupled neurons | Motor relay (modeled, not read out) |
+| **JO-B/C** | 23 | Johnston's Organ mechanosensory | Wind/vibration sensing |
+| **Giant Fiber** | 2 | Central escape command neuron (L/R pair) | Escape trigger |
+| **TTMn** | 2 | Tergotrochanteral motor neuron (L/R) | Fires the jump muscle directly |
+| **Other** | 369 | Unclassified brain/VNC interneurons within 1 hop of GF | Supporting circuitry |
+
+`motor_indices` in `snn_brain.py` reads out the **TTMn** and **DN** groups as the robot's escape command: these are GF's real, physically-verified motor targets in the VNC. GFC1-4 and the sensory/integration groups still participate in the simulated dynamics but aren't part of the output readout.
 
 ### Excluded Neuron Groups
 
@@ -128,20 +136,21 @@ To achieve real-time performance on a Raspberry Pi, we strategically isolated th
 | **Clock Neurons** (LNv, LNd) | ~150 | Circadian rhythm | Robot doesn't need sleep cycles |
 | **Courtship Circuit** (P1, pC1) | ~200 | Mating behavior | Not applicable |
 | **Feeding Circuit** | ~300 | Hunger/proboscis | No feeding apparatus |
+| **Remaining VNC leg/wing motor circuitry** | ~23,000 | Fine-grained multi-leg motor coordination | Only GF's direct 1-hop targets (TTMn, DN) are modeled; the Python gait layer, not further spiking neurons, maps the escape command onto all 18 leg servos |
 
 ## 🛠️ Hardware Setup
 
-- **Compute:** Raspberry Pi 4B (4GB+ RAM)
+- **Compute:** Raspberry Pi 5 (16GB RAM). The ~992-neuron escape circuit is tiny in comparison (a few thousand LIF neurons run in real time on far less), so the 16GB headroom is mainly for OpenCV frame buffers and comfortable dev/debug overhead, not the SNN itself.
 - **Vision:** Pi Camera Module v2 or USB webcam
 - **PWM Controller:** PCA9685 16-channel PWM board (I2C)
 - **Actuators:** 18× SG90 micro servos (6 legs × 3 joints: coxa, femur, tibia)
 - **Chassis:** Custom 3D-printed hexapod frame
 
-> ⚠️ **IMPORTANT POWER WARNING:** You MUST use two separate power supplies! Use a 5V/3A supply for the Raspberry Pi, and a robust 6V/5A+ supply for the PCA9685 to drive the servos. If you power the servos from the Pi, you will cause brownouts and SD card corruption.
+> ⚠️ **IMPORTANT POWER WARNING:** You MUST use two separate power supplies! The Raspberry Pi 5 needs a full 5.1V/5A over USB-C PD: a 3A supply (the old Pi 4B spec) isn't enough and will cause it to throttle USB current or brown out. For untethered walking, that means a portable PD power bank explicitly rated for 5V/5A (see the BOM), not just any "PD" or "fast charging" bank -- most cap the 5V rung at 3A. Use a separate, robust 6V/5A+ supply for the PCA9685 to drive the servos. If you power the servos from the Pi, you will cause brownouts and SD card corruption.
 
 ```mermaid
 flowchart LR
-    PwrPi((5V/3A Power)) --> Pi[Raspberry Pi 4B]
+    PwrPi((5.1V/5A USB-C PD)) --> Pi[Raspberry Pi 5]
     PwrServo((6V/5A+ Power)) --> PCA[PCA9685 PWM]
     
     Cam[Camera] -->|CSI/USB| Pi
@@ -174,9 +183,16 @@ pip install -r requirements.txt
 # Download and parse the biological connectome
 python fetch_connectome.py
 
-# Run the SNN and robot control loop
-python snn_brain.py
+# Run the full robot control loop (camera -> SNN -> servos)
+python main.py
+
+# Or run each layer standalone for development/testing:
+python snn_brain.py     # brain only, synthetic ramping stimulus, no camera/servos
+python vision.py        # camera only, prints the looming signal each frame
+python motor_control.py # servo layer only, a scripted stand/lunge/stand smoke test
 ```
+
+Each layer degrades gracefully with no hardware attached: `vision.py` falls back to a synthetic expanding-circle stimulus if no camera is available, and `motor_control.py` falls back to logging the servo commands it would have sent if no PCA9685/I2C hardware is detected (e.g. when developing on a laptop rather than the Pi itself). `main.py` uses whichever is actually available, so the exact same code runs on a dev machine and on the robot.
 
 ## 📁 Project Structure
 
@@ -185,8 +201,11 @@ project-neurohex/
 ├── README.md                         # This file
 ├── AGENT_INSTRUCTIONS.md             # AI agent context & constraints
 ├── requirements.txt                  # Python dependencies
-├── fetch_connectome.py               # Queries VFB API for adjacency matrices
+├── fetch_connectome.py               # Queries VFB API (MaleCNS) for adjacency matrices
 ├── snn_brain.py                      # Core brian2 SNN simulation (NeuroHexBrain)
+├── vision.py                         # Camera -> optical-flow looming signal (LoomingDetector)
+├── motor_control.py                  # Escape magnitude -> PCA9685 servo commands (HexapodController)
+├── main.py                           # Ties the three layers together into the robot control loop
 ├── connectome_data/                  # Generated by fetch_connectome.py
 │   ├── adjacency_matrix.npy          # N×N synapse count matrix
 │   ├── neuron_metadata.json          # Neuron IDs, labels, groups, indices
@@ -214,8 +233,9 @@ project-neurohex/
 ## 📚 References & Data Sources
 
 - **Virtual Fly Brain:** [virtualflybrain.org](https://www.virtualflybrain.org/)
-- **Hemibrain Dataset:** Janelia FlyEM Project
-- **Citation:** Scheffer, L.K., et al. (2020). *A connectome and analysis of the adult Drosophila central brain.* eLife.
+- **MaleCNS Dataset:** FlyEM Project (Janelia), in collaboration with the University of Cambridge, MRC Laboratory of Molecular Biology, and Google Research. [male-cns.janelia.org](https://male-cns.janelia.org/)
+- **Citation:** *Sexual dimorphism in the complete connectome of the Drosophila male central nervous system.* bioRxiv (2025). DOI: [10.1101/2025.10.09.680999](https://www.biorxiv.org/content/10.1101/2025.10.09.680999v1)
+- **GF-TTMn "giant synapse" physiology:** Trimarchi, J.R. & Schneiderman, A.M. (1993). *Giant fibre activation of an intrinsic muscle in the mesothoracic leg of Drosophila melanogaster.* Journal of Experimental Biology, 177, 149-167. See also Allen, M.J. et al. (2007), *The chemical component of the mixed GF-TTMn synapse in Drosophila melanogaster uses acetylcholine as its neurotransmitter*, European Journal of Neuroscience, on the mixed electrical/chemical "giant synapse" that `snn_brain.py`'s GF-to-motor weighting is modeled on.
 
 ## 📄 License
 
