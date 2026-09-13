@@ -194,6 +194,18 @@ python motor_control.py # servo layer only, a scripted stand/lunge/stand smoke t
 
 Each layer degrades gracefully with no hardware attached: `vision.py` falls back to a synthetic expanding-circle stimulus if no camera is available, and `motor_control.py` falls back to logging the servo commands it would have sent if no PCA9685/I2C hardware is detected (e.g. when developing on a laptop rather than the Pi itself). `main.py` uses whichever is actually available, so the exact same code runs on a dev machine and on the robot.
 
+### Raspberry Pi deployment notes
+
+Verified end-to-end on a real Raspberry Pi 5 (16GB). A few things that only show up on the Pi itself:
+
+- **Venv must use `--system-site-packages`.** `vision.py` prefers `picamera2` for a CSI camera module -- plain `cv2.VideoCapture` opens the device node but never actually reads a frame from it, because Raspberry Pi OS Bookworm+ dropped the legacy V4L2 camera stack in favor of libcamera. `picamera2` itself is apt-installed and tied to the system's compiled libcamera bindings, not pip-installable in isolation, so create the venv with:
+  ```bash
+  python3 -m venv --system-site-packages venv
+  ```
+- **System packages needed to build the GPIO/servo stack from source:** `sudo apt install python3-dev swig liblgpio-dev` (missing `Python.h`, `swig`, and `liblgpio.so` respectively will fail the `adafruit-circuitpython-servokit` install with native-build errors).
+- **`vfb-connect` (only needed by `fetch_connectome.py`) may fail to build on ARM** -- one of its transitive dependencies (`ncollpyde`, via `navis`) has no prebuilt aarch64 wheel and needs a Rust toolchain to compile from source. Since the Pi never needs to run `fetch_connectome.py` itself (fetch once on a dev machine, then copy `connectome_data/` over), it's simplest to just install the other four requirements directly rather than installing Rust for this.
+- **A `from brian2 import *` wildcard import shadows Python's builtin `max`/`min`** with numpy's reduction versions (`np.max(a, axis)`, not a pairwise max) on at least some numpy versions -- this surfaced as a `TypeError` on the Pi that hadn't appeared in Mac testing. `snn_brain.py` avoids bare `max()`/`min()` after that import for this reason; keep doing so in any new code added to that file.
+
 ## 📁 Project Structure
 
 ```text

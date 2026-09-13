@@ -12,37 +12,83 @@ positive divergence. Simple panning/translation does not produce this
 signature, which is what makes divergence a reasonable cheap proxy for
 "is something approaching me" rather than "is something moving".
 
-On a machine with no camera (or without camera permission granted to this
-process), falls back to a synthetic expanding-circle stimulus so the rest of
-the pipeline (SNN + motor layer) can still be developed and tested.
+Camera backend: tries picamera2 first (the only working path for a
+Raspberry Pi CSI camera module on modern Raspberry Pi OS -- Bookworm and
+later dropped the legacy V4L2 camera stack, so plain cv2.VideoCapture opens
+the device node but never actually reads a frame from it), then falls back
+to cv2.VideoCapture (USB webcams, or a Mac's built-in camera during dev),
+then to a synthetic expanding-circle stimulus if neither is available, so
+the rest of the pipeline (SNN + motor layer) can still be developed and
+tested without a camera at all.
 """
 
 import cv2
 import numpy as np
+
+try:
+    from picamera2 import Picamera2
+    _PICAMERA2_AVAILABLE = True
+except Exception:
+    _PICAMERA2_AVAILABLE = False
 
 
 class LoomingDetector:
     def __init__(self, camera_index=0, frame_width=320, frame_height=240):
         self.frame_width = frame_width
         self.frame_height = frame_height
-        self.cap = cv2.VideoCapture(camera_index)
-        self.available = self.cap.isOpened()
+        self.backend = None
+        self._picam2 = None
+        self.cap = None
+
+        if _PICAMERA2_AVAILABLE:
+            try:
+                self._picam2 = Picamera2()
+                config = self._picam2.create_preview_configuration(
+                    main={"size": (frame_width, frame_height), "format": "RGB888"}
+                )
+                self._picam2.configure(config)
+                self._picam2.start()
+                self.backend = 'picamera2'
+            except Exception as e:
+                print(f"Warning: picamera2 present but failed to start ({e}); trying OpenCV instead.")
+                self._picam2 = None
+
+        if self.backend is None:
+            cap = cv2.VideoCapture(camera_index)
+            if cap.isOpened():
+                ok, _ = cap.read()
+                if ok:
+                    self.cap = cap
+                    self.backend = 'opencv'
+                else:
+                    cap.release()
+
+        self.available = self.backend is not None
         if not self.available:
-            print(f"Warning: could not open camera {camera_index} (no camera, or permission not granted). "
+            print(f"Warning: no usable camera found (tried picamera2 and OpenCV index {camera_index}). "
                   "LoomingDetector will generate a synthetic looming stimulus instead.")
+
         self.prev_gray = None
         self._synthetic_t = 0
 
-    def read_looming_signal(self):
-        """Returns a float in [0, 1]: 0 = no threat, 1 = maximal looming."""
-        if self.available:
+    def _read_frame_gray(self):
+        if self.backend == 'picamera2':
+            frame = self._picam2.capture_array()
+            return cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        elif self.backend == 'opencv':
             ok, frame = self.cap.read()
             if not ok:
-                return 0.0
+                return None
             frame = cv2.resize(frame, (self.frame_width, self.frame_height))
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         else:
-            gray = self._synthetic_frame()
+            return self._synthetic_frame()
+
+    def read_looming_signal(self):
+        """Returns a float in [0, 1]: 0 = no threat, 1 = maximal looming."""
+        gray = self._read_frame_gray()
+        if gray is None:
+            return 0.0
 
         if self.prev_gray is None:
             self.prev_gray = gray
@@ -63,9 +109,9 @@ class LoomingDetector:
         looming_strength = float(np.mean(expansion))
 
         # NOTE: this scale factor is a rough starting point, not a calibrated
-        # constant -- it hasn't been validated against a real camera/lens/
-        # object combination (this dev machine has no camera access). Expect
-        # to retune it against the actual robot's camera and FOV.
+        # constant -- validated only against a MacBook webcam during dev.
+        # Expect to retune it against this camera/lens once mounted on the
+        # actual robot (distance-to-threat and FOV will both differ).
         normalized = np.clip(looming_strength * 40.0, 0.0, 1.0)
         return normalized
 
@@ -87,13 +133,17 @@ class LoomingDetector:
         return frame
 
     def release(self):
-        if self.available:
+        if self.backend == 'picamera2':
+            self._picam2.stop()
+            self._picam2.close()
+        elif self.backend == 'opencv':
             self.cap.release()
 
 
 if __name__ == '__main__':
     print("Running LoomingDetector standalone (Ctrl+C to stop)...")
     detector = LoomingDetector()
+    print(f"Backend: {detector.backend or 'synthetic (no camera found)'}")
     try:
         for i in range(100):
             signal = detector.read_looming_signal()

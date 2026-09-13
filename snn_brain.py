@@ -267,7 +267,13 @@ class NeuroHexBrain:
         run_time = self.network.t
         if run_time > 0 * ms:
             if window_ms is not None:
-                window_start = max(0 * ms, run_time - window_ms * ms)
+                # NOTE: don't use the bare max() here -- `from brian2 import *`
+                # shadows Python's builtin max with numpy's (a reduction that
+                # takes an axis as its 2nd arg, not a pairwise max), and this
+                # can differ across environments/numpy versions.
+                window_start = run_time - window_ms * ms
+                if window_start < 0 * ms:
+                    window_start = 0 * ms
                 duration_s = (run_time - window_start) / second
                 in_window = self.spike_monitor.t >= window_start
                 spike_indices = self.spike_monitor.i[in_window]
@@ -288,7 +294,9 @@ class NeuroHexBrain:
         escape_magnitude = (total_spikes / duration_s) / num_motor if duration_s > 0 else 0.0
         
         # Normalize roughly to 0-1 based on a max expected firing rate (e.g., 100 Hz)
-        norm_escape = min(1.0, escape_magnitude / 100.0)
+        norm_escape = escape_magnitude / 100.0
+        if norm_escape > 1.0:
+            norm_escape = 1.0
         
         return {
             'escape_magnitude': norm_escape,
