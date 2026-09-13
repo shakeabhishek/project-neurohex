@@ -6,7 +6,7 @@
 * **1x** Raspberry Pi (Model 3, 4, or 5)
 * **1x** Raspberry Pi Camera Module V2 (or similar)
 * **2x** PCA9685 16-Channel I2C PWM Servo Drivers (We need 2 because we have 18 servos, and each board only holds 16).
-* **18x** Micro Servos (MG90S metal gear servos are highly recommended over SG90 plastic ones, as a hexapod's weight will strip plastic gears).
+* **18x** 21g Metal Gear Servos (Required for the Nougat chassis. Standard 9g micro-servos like the MG90S will be too small and weak to fit the brackets or lift the heavier frame).
 
 ### Power Delivery
 * **1x** USB Power Bank (5V, 2.1A+ output) - To power the Raspberry Pi.
@@ -22,8 +22,8 @@
 
 ## 3D Printed Parts Required
 
-**Official Chassis Selection:** [Hexapod Mochi by RookiDroid](https://rookidroid.com/build-your-own-mochi/). 
-*You can download all the free `.stl` files from their site. It is a circular, 18-servo chassis built for MG90S/MG92B micro servos, making it the perfect mechanical base for Project NeuroHex.*
+**Official Chassis Selection:** [Hexapod Nougat by RookiDroid](https://rookidroid.com/build-your-own-nougat/). 
+*You can download the `nougat.3mf` files from their GitHub. This is an aggressive, larger chassis that requires beefier 21g servos instead of the standard 9g micro-servos.*
 
 ### Body/Chassis
 * **1x Main Thorax (Baseplate):** The central hub. Needs mounting standoffs/holes for the Raspberry Pi on top, and mounting rails for the two PCA9685 boards underneath.
